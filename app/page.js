@@ -1,101 +1,436 @@
-import Image from "next/image";
+"use client";
+import Head from "next/head";
+import { useState, useEffect, useRef } from "react";
+import { SketchPicker } from "react-color";
+import {
+  FaUpload,
+  FaCrop,
+  FaArrowRotateRight,
+  MdRedo,
+  MdUndo,
+  FaUndo,
+  FaRedo,
+  FaDownload,
+  FaPalette,
+  FaArrowRotateLeft,
+} from "react-icons/fa6";
+
+import {
+  Upload,
+  Crop,
+  RotateCcw,
+  RotateCw,
+  Undo,
+  Redo,
+  Download,
+  PaintBucket,
+} from "lucide-react";
+import { HexColorPicker } from "react-colorful";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.js
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [imagePublicId, setImagePublicId] = useState(""); // Public ID of the uploaded image
+  const [cloudinaryReady, setCloudinaryReady] = useState(false);
+  const [selectedColor, setSelectedColor] = useState("#ffffff"); // Background color
+  const [cropParams, setCropParams] = useState({ width: 500, height: 300 }); // Canvas size
+  const [rotation, setRotation] = useState(0); // Rotation angle
+  const [flip, setFlip] = useState({ horizontal: false, vertical: false }); // Flip states
+  const [brightness, setBrightness] = useState(100); // Brightness percentage
+  const [contrast, setContrast] = useState(100); // Contrast percentage
+  const [filter, setFilter] = useState("none"); // Image filter
+  const canvasRef = useRef(null);
+  const [history, setHistory] = useState([]); // For undo/redo
+  const [historyStep, setHistoryStep] = useState(-1);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Load Cloudinary Upload Widget
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://widget.cloudinary.com/v2.0/global/all.js";
+    script.onload = () => setCloudinaryReady(true);
+    document.body.appendChild(script);
+  }, []);
+
+  // useEffect(() => {
+  //   if (imagePublicId) {
+  //     drawImageWithBackground(imagePublicId);
+  //   }
+  // }, [filter, brightness, contrast, rotation, flip]);
+
+  // Open Cloudinary Upload Widget
+  const openWidget = () => {
+    if (!cloudinaryReady || !window.cloudinary) return;
+
+    const widget = window.cloudinary.createUploadWidget(
+      {
+        cloudName: "dh1jh6vwm",
+        uploadPreset: "bg-image",
+        cropping: true,
+        croppingAspectRatio: 16 / 9,
+      },
+      (error, result) => {
+        if (result.event === "success") {
+          console.log("Uploaded Image:", result.info);
+          setImagePublicId(result.info.secure_url);
+          drawImageWithBackground(result.info.secure_url);
+          // Reset transformations
+          setRotation(0);
+          setFlip({ horizontal: false, vertical: false });
+          setBrightness(100);
+          setContrast(100);
+          setFilter("none");
+          // Reset history
+          setHistory([]);
+          setHistoryStep(-1);
+        }
+      }
+    );
+    widget.open();
+  };
+
+  // Draw Image on Canvas with Background and Transformations
+  const drawImageWithBackground = (imageUrl) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    const image = new Image();
+    image.crossOrigin = "Anonymous";
+    image.onload = () => {
+      // Clear the canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw the background color
+      ctx.fillStyle = selectedColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Save the context state
+      ctx.save();
+
+      // Apply transformations
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.scale(flip.horizontal ? -1 : 1, flip.vertical ? -1 : 1);
+      ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) ${filter}`;
+
+      // Draw the image centered
+      const imgWidth = image.width;
+      const imgHeight = image.height;
+      const scale = Math.min(
+        canvas.width / imgWidth,
+        canvas.height / imgHeight
+      );
+      ctx.drawImage(
+        image,
+        (-imgWidth * scale) / 2,
+        (-imgHeight * scale) / 2,
+        imgWidth * scale,
+        imgHeight * scale
+      );
+
+      // Restore the context to its original state
+      ctx.restore();
+
+      // Save the current state to history
+      const currentState = canvas.toDataURL();
+      const newHistory = history.slice(0, historyStep + 1);
+      newHistory.push(currentState);
+      setHistory(newHistory);
+      setHistoryStep(newHistory.length - 1);
+    };
+    image.src = imageUrl;
+  };
+
+  // Apply the background color and re-draw the image
+  const applyBackgroundColor = () => {
+    if (imagePublicId) {
+      drawImageWithBackground(imagePublicId);
+    }
+  };
+
+  // Handle Rotation
+  const handleRotate = (angle) => {
+    setRotation((prev) => (prev + angle) % 360);
+    if (imagePublicId) {
+      drawImageWithBackground(imagePublicId);
+    }
+  };
+
+  // Handle Flip
+  const handleFlip = (direction) => {
+    setFlip((prev) => ({
+      ...prev,
+      [direction]: !prev[direction],
+    }));
+    if (imagePublicId) {
+      drawImageWithBackground(imagePublicId);
+    }
+  };
+
+  // Handle Brightness
+  const handleBrightness = (value) => {
+    setBrightness(value);
+    if (imagePublicId) {
+      drawImageWithBackground(imagePublicId);
+    }
+  };
+
+  // Handle Contrast
+  const handleContrast = (value) => {
+    setContrast(value);
+    if (imagePublicId) {
+      drawImageWithBackground(imagePublicId);
+    }
+  };
+
+  // Handle Filter
+  const handleFilter = (e) => {
+    setFilter(e.target.value);
+    if (imagePublicId) {
+      drawImageWithBackground(imagePublicId);
+    }
+  };
+
+  // Handle Undo
+  const handleUndo = () => {
+    if (historyStep > 0) {
+      setHistoryStep(historyStep - 1);
+      const previousState = history[historyStep - 1];
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+      const image = new Image();
+      image.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(image, 0, 0);
+      };
+      image.src = previousState;
+    }
+  };
+
+  // Handle Redo
+  const handleRedo = () => {
+    if (historyStep < history.length - 1) {
+      setHistoryStep(historyStep + 1);
+      const nextState = history[historyStep + 1];
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+      const image = new Image();
+      image.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(image, 0, 0);
+      };
+      image.src = nextState;
+    }
+  };
+
+  // Handle Export Image
+  const exportImage = () => {
+    const canvas = canvasRef.current;
+    const link = document.createElement("a");
+    link.download = "edited-image.png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  };
+
+  // Styles
+  const btnStyle = "flex flex-col items-center text-[1rem]";
+  const iconStyle = "mb-2 bg-[#EFEEF0B2] rounded-full p-3 w-12 h-12";
+  return (
+    <>
+      <Head>
+        <title>Enhanced Cloudinary Image Editor</title>
+        <meta charSet="utf-8" />
+      </Head>
+
+      <div className=" flex flex-col items-center justify-center mt-10 max-w-[600px] mx-auto shadow rounded-lg">
+        {/* Canvas */}
+        <div className="pt-10">
+          <canvas
+            ref={canvasRef}
+            width={cropParams.width}
+            height={cropParams.height}
+            className="bg-[#D9D9D9] block m-auto"
+          />
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+
+        {/* Action Buttons */}
+        <div className="flex items-center justify-center gap-[10px] mt-10">
+          <button onClick={openWidget} className={btnStyle}>
+            <FaUpload className={iconStyle} /> Upload & Crop Image
+          </button>
+          <button onClick={exportImage} className={btnStyle}>
+            <FaDownload className={iconStyle} /> Export Image
+          </button>
+        </div>
+
+        {/* Transformation Controls */}
+        <div>
+          {/* Rotate Controls */}
+          <div className="flex items-center justify-center gap-[10px] mt-10">
+            <button onClick={() => handleRotate(90)} className={btnStyle}>
+              <RotateCw className={iconStyle} />
+              Rotate 90°
+            </button>
+            <button onClick={() => handleRotate(-90)} className={btnStyle}>
+              <RotateCcw className={iconStyle} />
+              Rotate -90°
+            </button>
+          </div>
+
+          {/* Flip Controls */}
+          <div className="flex items-center justify-center gap-[10px] mt-10">
+            <button
+              onClick={() => handleFlip("horizontal")}
+              className={btnStyle}
+            >
+              <Crop className={iconStyle} /> Flip Horizontal
+            </button>
+            <button onClick={() => handleFlip("vertical")} className={btnStyle}>
+              <Crop
+                size={18}
+                style={{ marginRight: "5px", transform: "rotate(90deg)" }}
+                className={iconStyle}
+              />
+              Flip Vertical
+            </button>
+          </div>
+
+          {/* Brightness Control */}
+          <div className="flex items-center justify-center gap-[10px] mt-10">
+            <div className="flex flex-col items-center">
+              <input
+                type="range"
+                min="0"
+                max="200"
+                value={brightness}
+                onChange={(e) => handleBrightness(e.target.value)}
+              />
+              <span>Brightness --- {brightness}%</span>
+            </div>
+
+            {/* Contrast Control */}
+            <div className="flex flex-col items-center">
+              <input
+                type="range"
+                min="0"
+                max="200"
+                value={contrast}
+                onChange={(e) => handleContrast(e.target.value)}
+              />
+              <span>Contrast -- {contrast}%</span>
+            </div>
+          </div>
+
+          {/* Filter Control */}
+          <div className="w-full mt-10">
+            <select
+              value={filter}
+              onChange={handleFilter}
+              className="w-full bg-[#D9D9D9] p-3"
+            >
+              <option value="none">None</option>
+              <option value="grayscale(100%)">Grayscale</option>
+              <option value="sepia(100%)">Sepia</option>
+              <option value="blur(5px)">Blur</option>
+              <option value="invert(100%)">Invert</option>
+            </select>
+          </div>
+
+          {/* Undo/Redo Controls */}
+          <div className="flex items-center justify-center gap-[10px] mt-10">
+            <button
+              onClick={handleUndo}
+              disabled={historyStep <= 0}
+              className={btnStyle}
+            >
+              {/* <MdUndo className={iconStyle} /> Undo */}
+              <Undo className={iconStyle} /> Undo
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={historyStep >= history.length - 1}
+              className={btnStyle}
+            >
+              {/* <MdRedo className={iconStyle} /> Redo */}
+              <Redo className={iconStyle} /> Redo
+            </button>
+          </div>
+        </div>
+
+        {/* Color Picker */}
+        {/* <div style={{ marginBottom: "20px" }}>
+          <p>Select Background Color:</p>
+          <SketchPicker
+            color={selectedColor}
+            onChangeComplete={(color) => setSelectedColor(color.hex)}
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
+          <button
+            onClick={applyBackgroundColor}
+            className="bg-[#000000CC] text-white mt-10"
+          >
+            Apply Background Color
+          </button>
+        </div> */}
+        <div style={{ marginBottom: "20px" }}>
+          <h3>Background Color</h3>
+          <HexColorPicker
+            color={selectedColor}
+            onChange={(color) => setSelectedColor(color)}
+            style={{ width: "150px", height: "150px", margin: "auto" }}
           />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          <p style={{ marginTop: "10px" }}>
+            Selected Color: <strong>{selectedColor.toUpperCase()}</strong>
+          </p>
+          <button
+            onClick={applyBackgroundColor}
+            className="bg-[#000000CC] text-white mt-10"
+          >
+            Apply Background Color
+          </button>
+        </div>
+        {/* <PaintBucket className={iconStyle} /> */}
+
+        {/* Crop Dimensions */}
+        <div className="text-center">
+          <h3 className="text-[2.6rem] text-[#000000] font-semibold">
+            Canvas Dimensions
+          </h3>
+          <div className="flex items-center justify-center">
+            <p>Width</p>
+            <input
+              type="number"
+              placeholder="Width"
+              value={cropParams.width}
+              onChange={(e) =>
+                setCropParams({
+                  ...cropParams,
+                  width: parseInt(e.target.value) || 500,
+                })
+              }
+            />
+          </div>
+          <div className="flex items-center justify-center">
+            <span>Height</span>
+            <input
+              type="number"
+              placeholder="Height"
+              value={cropParams.height}
+              onChange={(e) =>
+                setCropParams({
+                  ...cropParams,
+                  height: parseInt(e.target.value) || 300,
+                })
+              }
+            />
+          </div>
+          <button
+            onClick={() => {
+              if (imagePublicId) drawImageWithBackground(imagePublicId);
+            }}
+            className="bg-[#000000CC] text-white mt-10"
+          >
+            Update Canvas
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
