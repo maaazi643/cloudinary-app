@@ -49,11 +49,11 @@ export default function Home() {
     document.body.appendChild(script);
   }, []);
 
-  // useEffect(() => {
-  //   if (imagePublicId) {
-  //     drawImageWithBackground(imagePublicId);
-  //   }
-  // }, [filter, brightness, contrast, rotation, flip]);
+  useEffect(() => {
+    if (imagePublicId) {
+      drawImageWithBackground(imagePublicId);
+    }
+  }, [filter, brightness, contrast, rotation, flip]);
 
   // Open Cloudinary Upload Widget
   const openWidget = () => {
